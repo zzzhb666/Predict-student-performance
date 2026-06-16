@@ -53,75 +53,75 @@ print(f"\nDemographic feature set shape: {demo_df.shape}")
 print(f"Columns: {list(demo_df.columns)}")
 
 
-# 3. Build the ENGAGEMENT feature from VLE click logs
+# 3. Build the ENGAGEMENT features from VLE click logs
+# Two time windows: early (first 4 weeks, days 0-27)
+#                   mid (first half of course, days 0-135)
 
-print("STEP 3: Building engagement feature set from VLE clicks")
+print("STEP 3: Building engagement feature sets from VLE clicks")
 
 svle = pd.read_csv(DATA_DIR / "studentVle.csv")
 print(f"Loaded {len(svle):,} click records")
 
-# Create the same student_key in the VLE table for joining
 svle["student_key"] = (svle["id_student"].astype(str)
                        + "_" + svle["code_module"]
                        + "_" + svle["code_presentation"])
 
-# Aggregate per student-module: total clicks, active days, etc.
-print("\nAggregating per-student engagement features...")
 
-engagement = svle.groupby("student_key").agg(
-    total_clicks=("sum_click", "sum"),
-    mean_clicks_per_day=("sum_click", "mean"),
-    max_clicks_in_a_day=("sum_click", "max"),
-    active_days=("date", "nunique"),       # how many distinct days they clicked 在多少个日期点击过
-    first_active_day=("date", "min"),
-    last_active_day=("date", "max"),
-).reset_index()
+def build_engagement(svle_subset, suffix):
+    """Build engagement features from a time-windowed slice of the VLE data."""
+    eng = svle_subset.groupby("student_key").agg(
+        total_clicks=("sum_click", "sum"),
+        mean_clicks_per_day=("sum_click", "mean"),
+        max_clicks_in_a_day=("sum_click", "max"),
+        active_days=("date", "nunique"),
+        first_active_day=("date", "min"),
+        last_active_day=("date", "max"),
+    ).reset_index()
 
-# how long between first and last click
-engagement["activity_span"] = (engagement["last_active_day"]
-                               - engagement["first_active_day"])
+    eng["activity_span"] = (eng["last_active_day"]
+                            - eng["first_active_day"])
 
-# Consistency measure: active_days / activity_span
-# (1.0 means they were active every day; lower = more sporadic)
-engagement["consistency"] = np.where(
-    engagement["activity_span"] > 0,
-    engagement["active_days"] / engagement["activity_span"],
-    0
-)
+    eng["consistency"] = np.where(
+        eng["activity_span"] > 0,
+        eng["active_days"] / eng["activity_span"],
+        0
+    )
 
-# clicks in the first 4 weeks (days 0-27) Gray & Perkins (2019)
+    eng = eng.drop(columns=["first_active_day", "last_active_day"])
 
-early_clicks = svle[svle["date"] <= 27].groupby("student_key")["sum_click"].sum()
-engagement = engagement.merge(
-    early_clicks.rename("early_clicks_first_4_weeks"),
-    on="student_key", how="left"
-)
-engagement["early_clicks_first_4_weeks"] = (
-    engagement["early_clicks_first_4_weeks"].fillna(0)
-)
-
-print(f"\nEngagement feature set shape: {engagement.shape}")
-print(f"Columns: {list(engagement.columns)}")
-print(f"\nFirst 5 rows:")
-print(engagement.head())
+    # rename columns to mark the time window (e.g. total_clicks_early)
+    eng.columns = ["student_key"] + [f"{c}_{suffix}" for c in eng.columns
+                                     if c != "student_key"]
+    return eng
 
 
+# Early engagement: first 4 weeks (days 0-27), Gray & Perkins (2019)
+print("\nBuilding EARLY engagement (days 0-27)...")
+svle_early = svle[svle["date"] <= 27]
+engagement_early = build_engagement(svle_early, "early")
+print(f"  Early engagement feature set shape: {engagement_early.shape}")
 
-# 4.Merging and aligning feature sets.(合并对齐把demographic表和engagement表合并到一起，确保每个学生在两个表里都有记录。如果某个学生完全没有点击记录，行为特征就填0。)
+# Mid engagement: first half of the course (days 0-135)
+print("Building MID engagement (days 0-135)...")
+svle_mid = svle[svle["date"] <= 135]
+engagement_mid = build_engagement(svle_mid, "mid")
+print(f"  Mid engagement feature set shape: {engagement_mid.shape}")
+
+
+# 4. Merging and aligning feature sets
 
 print("STEP 4: Merging and aligning feature sets")
 
-merged = demo_df.merge(engagement, on="student_key", how="left")
+merged = demo_df.merge(engagement_early, on="student_key", how="left")
+merged = merged.merge(engagement_mid, on="student_key", how="left")
 
-# Students with no VLE clicks at all , fill engagement features with 0
-engagement_cols = ["total_clicks", "mean_clicks_per_day", "max_clicks_in_a_day",
-                   "active_days", "activity_span", "consistency",
-                   "early_clicks_first_4_weeks"]
-for col in engagement_cols:
+# columns belonging to each engagement set
+early_cols = [c for c in engagement_early.columns if c != "student_key"]
+mid_cols   = [c for c in engagement_mid.columns   if c != "student_key"]
+
+# Students with no clicks in the window -> fill with 0
+for col in early_cols + mid_cols:
     merged[col] = merged[col].fillna(0)
-
-# Drop helper columns not used as features
-merged = merged.drop(columns=["first_active_day", "last_active_day"])
 
 # Attach the target
 merged = merged.merge(si[["student_key", "target"]], on="student_key", how="left")
@@ -132,7 +132,10 @@ print(f"Final merged dataset shape: {merged.shape}")
 print(f"Pass rate: {(merged['target'] == 1).mean() * 100:.2f}%")
 
 
-# 5. Saving three feature sets(保存三个特征组。输出三个CSV文件：只有人口统计特征的、只有行为特征的、两者合并的)
+# 5. Saving three feature sets
+# Group 1: demographic only           (available before course starts)
+# Group 2: early engagement (4 weeks) (available 4 weeks into course)
+# Group 3: mid engagement (half)      (available halfway through course)
 
 print("STEP 5: Saving three feature sets")
 
@@ -140,14 +143,10 @@ features_demo = merged[["student_key"] + demographic_cols + ["target"]]
 features_demo.to_csv("features_demographic.csv", index=False)
 print(f"Saved features_demographic.csv ({len(demographic_cols)} features)")
 
-features_eng = merged[["student_key"] + engagement_cols + ["target"]]
-features_eng.to_csv("features_engagement.csv", index=False)
-print(f"Saved features_engagement.csv ({len(engagement_cols)} features)")
+features_early = merged[["student_key"] + early_cols + ["target"]]
+features_early.to_csv("features_engagement_early.csv", index=False)
+print(f"Saved features_engagement_early.csv ({len(early_cols)} features)")
 
-all_feature_cols = demographic_cols + engagement_cols
-features_combined = merged[["student_key"] + all_feature_cols + ["target"]]
-features_combined.to_csv("features_combined.csv", index=False)
-print(f"Saved features_combined.csv ({len(all_feature_cols)} features)")
-
-
-
+features_mid = merged[["student_key"] + mid_cols + ["target"]]
+features_mid.to_csv("features_engagement_mid.csv", index=False)
+print(f"Saved features_engagement_mid.csv ({len(mid_cols)} features)")

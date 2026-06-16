@@ -20,16 +20,16 @@ N_FOLDS = 5
 print("STEP 1: Loading the three feature sets from Week 5")
 
 feature_files = {
-    "demographic": "features_demographic.csv",
-    "engagement":  "features_engagement.csv",
-    "combined":    "features_combined.csv",
+    "demographic":      "features_demographic.csv",
+    "engagement_early": "features_engagement_early.csv",
+    "engagement_mid":   "features_engagement_mid.csv",
 }
 
 feature_sets = {}
 for name, fname in feature_files.items():
     df = pd.read_csv(fname)
     feature_sets[name] = df
-    print(f"  {name:12s}: {df.shape[0]} rows, "
+    print(f"  {name:18s}: {df.shape[0]} rows, "
           f"{df.shape[1] - 2} features")  # minus student_key + target
 
 
@@ -117,7 +117,7 @@ for fs_name, df in feature_sets.items():
             row[f"{metric}_std"] = np.std(vals)
         summary_rows.append(row)
 
-        print(f"  {fs_name:12s} | {model_name:20s} | "
+        print(f"  {fs_name:18s} | {model_name:20s} | "
               f"F1 = {row['f1_mean']:.4f} +/- {row['f1_std']:.4f}")
 
 
@@ -146,18 +146,19 @@ print(pivot.round(4).to_string())
 
 
 # 5. Fairness check: error rates across IMD subgroups
+# Uses the demographic feature set (which still contains imd_band)
 
 print("STEP 5: Fairness check across IMD subgroups")
 
-combined = feature_sets["combined"].copy()
-feature_cols = [c for c in combined.columns
+demo_for_fairness = feature_sets["demographic"].copy()
+feature_cols = [c for c in demo_for_fairness.columns
                 if c not in ("student_key", "target")]
 
-X = combined[feature_cols].values
-y = combined["target"].values
+X = demo_for_fairness[feature_cols].values
+y = demo_for_fairness["target"].values
 
 X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
-    X, y, combined.index,
+    X, y, demo_for_fairness.index,
     test_size=0.25, stratify=y, random_state=RANDOM_STATE)
 
 rf = RandomForestClassifier(n_estimators=100,
@@ -166,7 +167,7 @@ rf.fit(X_train, y_train)
 y_pred = rf.predict(X_test)
 
 # Attach predictions back to the test rows so we can group by IMD band
-test_df = combined.loc[idx_test].copy()
+test_df = demo_for_fairness.loc[idx_test].copy()
 test_df["y_true"] = y_test
 test_df["y_pred"] = y_pred
 
@@ -188,6 +189,5 @@ for band, grp in test_df.groupby("imd_band"):
 fairness_df = pd.DataFrame(fairness_rows).sort_values("imd_band_encoded")
 fairness_df.to_csv("fairness_by_subgroup.csv", index=False)
 print("Saved fairness_by_subgroup.csv")
-print("\nPer-subgroup performance (combined + random forest):")
+print("\nPer-subgroup performance (demographic + random forest):")
 print(fairness_df.round(4).to_string(index=False))
-
