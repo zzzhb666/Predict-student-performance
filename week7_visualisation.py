@@ -1,22 +1,3 @@
-"""
-Week 7: Analysis and Visualisation
-====================================
-Input (from Week 6):
-  - results_summary.csv
-  - results_per_fold.csv
-  - fairness_by_subgroup.csv
-  - features_demographic.csv
-  - features_engagement_early.csv
-  - features_engagement_mid.csv
-
-Output (saved to week7_plots/):
-  - fig1_f1_comparison.png         F1 bar chart (9 experiments)
-  - fig2_all_metrics_heatmap.png   Accuracy/Precision/Recall/F1 heatmap
-  - fig3_feature_importance.png    Random forest feature importance (mid set)
-  - fig4_fairness_imd.png          F1 by IMD band
-  - fig5_confusion_matrices.png    Confusion matrices (3 feature sets)
-"""
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -61,9 +42,9 @@ print(f"  per_fold : {per_fold.shape}")
 print(f"  fairness : {fairness.shape}")
 
 
-# Figure 1: F1 comparison bar chart with error bars
+# Figure 1: F1 comparison bar chart（条形图）
 
-print("\nGenerating Fig 1: F1 comparison bar chart...")
+print("\nGenerating Fig 1: F1 comparison bar chart")
 
 fig, ax = plt.subplots(figsize=(11, 6))
 
@@ -107,7 +88,7 @@ plt.close()
 print("  Saved fig1_f1_comparison.png")
 
 
-# Figure 2: Heatmap of all four metrics
+# Figure 2: Heatmap of all four metrics（四指标热力图，颜色越深分数越高）
 
 print("Generating Fig 2: All-metrics heatmap...")
 
@@ -149,7 +130,7 @@ plt.close()
 print("  Saved fig2_all_metrics_heatmap.png")
 
 
-# Figure 3: Random forest feature importance on mid-engagement set
+# Figure 3: Random forest feature importance on mid-engagement set（特征重要性，哪个参指标对预测贡献最大）
 
 print("Generating Fig 3: Feature importance (mid engagement set)...")
 
@@ -187,7 +168,7 @@ plt.close()
 print("  Saved fig3_feature_importance.png")
 
 
-# Figure 4: Fairness, F1 by IMD band
+# Figure 4: Fairness, F1 by IMD band（公平性折线图）
 
 print("Generating Fig 4: Fairness check by IMD band...")
 
